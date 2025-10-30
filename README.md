@@ -1,12 +1,12 @@
 # Pattern Analysis - 2025
-## 🧠 Skin Lesion Classification using Siamese Network
+## 🧠 Skin Cancer Classification using Siamese Network
 ### 1. Overview
 This project implements a Siamese neural network to classify skin lesions from the ISIC 2020 Kaggle Challenge dataset (resized) into two categories: normal and melanoma. The model aims to achieve around 0.8 accuracy on the test set.
 Siamese networks are particularly effective for medical image classification where data imbalance and visual similarity between classes make traditional models less reliable. The network learns to distinguish between images by measuring their feature similarity rather than relying solely on categorical outputs.
 
 ### 2. How It Works
 A Siamese Network consists of two or more identical convolutional branches that share weights and extract embeddings from input images.
-The Improved Siamese Network used here employs a ResNet-18 / EfficientNet backbone to generate feature embeddings for each image.
+The Improved Siamese Network used here employs a EfficientNet backbone to generate feature embeddings for each image.
 During training, the model receives image triplets:
 
 Anchor: a reference image,
