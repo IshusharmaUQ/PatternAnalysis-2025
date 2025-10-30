@@ -16,8 +16,7 @@ from torchvision import transforms
 # Configurations
 # -------------------------------
 IMAGE_DIR = "/kaggle/input/isic-2020-jpg-224x224-resized/train"
-TRAIN_CSV = "/kaggle/input/isic-2020/labels.csv"   # adjust if your notebook used a different CSV path
-IMG_SIZE = 224
+TRAIN_CSV = "/kaggle/input/isic-2020/labels.csv"   
 BATCH_SIZE = 32
 TRAIN_SPLIT = 584  
 
