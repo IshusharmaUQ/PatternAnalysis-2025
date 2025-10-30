@@ -1,41 +1,56 @@
-# Data loader and preprocessing 
+# ===============================
+# Data Loader and Preprocessing
+# ===============================
 
 import os
 import random
+import numpy as np
 import pandas as pd
 from PIL import Image
-import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
 
+# -------------------------------
+# Configurations
+# -------------------------------
 IMAGE_DIR = "/kaggle/input/isic-2020-jpg-224x224-resized/train"
 TRAIN_CSV = "/kaggle/input/isic-2020/labels.csv"   # adjust if your notebook used a different CSV path
 IMG_SIZE = 224
 BATCH_SIZE = 32
 TRAIN_SPLIT = 584  
 
-# train/val transforms
+
+# -------------------------------
+# Data Transformations
+# -------------------------------
 train_transform = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.RandomHorizontalFlip(),
     transforms.RandomVerticalFlip(),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])
 ])
 
 val_transform = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])
 ])
 
+
+# -------------------------------
+# Basic ISIC Dataset
+# -------------------------------
 class ISICDataset(Dataset):
+    """
+    Dataset for individual image-label pairs.
+    Expects DataFrame with columns ['isic_id' or 'image_name', 'target'].
+    """
     def __init__(self, df, image_dir=IMAGE_DIR, transform=None):
-        """
-        df: pandas DataFrame with at least columns ['isic_id' or 'image_name', 'target']
-        """
         self.df = df.reset_index(drop=True)
         self.image_dir = image_dir
         self.transform = transform
@@ -48,14 +63,19 @@ class ISICDataset(Dataset):
         img_id = row.get('isic_id') or row.get('image_name') or row.get('image')
         label = int(row.get('target', 0))
         img_path = os.path.join(self.image_dir, f"{img_id}.jpg")
+
         img = Image.open(img_path).convert('RGB')
         if self.transform:
             img = self.transform(img)
         return img, label
 
+
+# -------------------------------
+# Triplet Dataset
+# -------------------------------
 class TripletMelanomaDataset(Dataset):
     """
-    Creates triplets (anchor, positive, negative) - consistent with the notebook's triplet sampling idea.
+    Creates triplets (anchor, positive, negative) consistent with the notebook's triplet sampling idea.
     """
     def __init__(self, df, image_dir=IMAGE_DIR, transform=None):
         self.df = df.reset_index(drop=True)
@@ -95,9 +115,13 @@ class TripletMelanomaDataset(Dataset):
 
         return anchor_img, pos_img, neg_img, anchor_label
 
+
+# -------------------------------
+# DataLoader Builder
+# -------------------------------
 def build_loaders(df, image_dir=IMAGE_DIR, batch_size=BATCH_SIZE, img_size=IMG_SIZE):
     """
-    Build train and val DataLoaders trying to mirror the notebook splitting logic.
+    Build train and validation DataLoaders trying to mirror the notebook splitting logic.
     Returns train_loader, val_loader (triplet loaders).
     """
     df_shuffled = df.sample(frac=1, random_state=42).reset_index(drop=True)
