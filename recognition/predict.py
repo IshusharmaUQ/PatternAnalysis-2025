@@ -1,56 +1,42 @@
+# Example usage of trained model (loads siamese_model.pth saved by train.py)
+
 import torch
-from modules import SiameseNetwork
-from PIL import Image
+from modules import ImprovedSiameseNetwork
 from torchvision import transforms
+from PIL import Image
+import os
 
-# ------------------------------------------------------------
-# Device setup (use GPU if available)
-# ------------------------------------------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+IMG_SIZE = 224
+MODEL_PATH = "siamese_model.pth"
+IMAGE_DIR = "/kaggle/input/isic-2020-jpg-224x224-resized/train"  
+transform = transforms.Compose([
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
+])
 
-# ------------------------------------------------------------
-# Load the trained Siamese model
-# ------------------------------------------------------------
-siamese_model = SiameseNetwork().to(device)
-siamese_model.load_state_dict(torch.load("siamese_model.pth"))
-siamese_model.eval()  # Set to evaluation mode (no dropout, no gradient updates)
+# load model architecture matching train.py
+model = ImprovedSiameseNetwork(embedding_dim=256, backbone='resnet18', pretrained=False).to(device)
+model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+model.eval()
 
+def predict_pair(path1, path2):
+    img1 = Image.open(path1).convert('RGB')
+    img2 = Image.open(path2).convert('RGB')
+    t1 = transform(img1).unsqueeze(0).to(device)
+    t2 = transform(img2).unsqueeze(0).to(device)
+    with torch.no_grad():
+        e1 = model.forward_once(t1)
+        e2 = model.forward_once(t2)
+        dist = torch.nn.functional.pairwise_distance(e1, e2)
+    print(f"Distance between {os.path.basename(path1)} and {os.path.basename(path2)}: {dist.item():.4f}")
+    return dist.item()
 
-def predict_similarity(image_path_left, image_path_right):
-    """
-    Given two image file paths, compute their similarity using the trained Siamese network.
-
-    Args:
-        image_path_left (str): Path to the first image.
-        image_path_right (str): Path to the second image.
-    """
-    # Define preprocessing transformations
-    image_preprocessing = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225])
-    ])
-
-    # Load and preprocess both input images
-    image_left = Image.open(image_path_left)
-    image_right = Image.open(image_path_right)
-
-    image_left = image_preprocessing(image_left).unsqueeze(0).to(device)
-    image_right = image_preprocessing(image_right).unsqueeze(0).to(device)
-
-    # Forward pass through the Siamese model
-    with torch.no_grad():  # Disable gradient computation for inference
-        embedding_left, embedding_right = siamese_model(image_left, image_right)
-
-        # Compute Euclidean distance between the embeddings
-        similarity_distance = torch.nn.functional.pairwise_distance(embedding_left, embedding_right)
-
-    # Print similarity score (lower = more similar)
-    print(f"Euclidean Distance between images: {similarity_distance.item():.4f}")
-
-
-# ------------------------------------------------------------
-# Example usage
-# ------------------------------------------------------------
-predict_similarity("/path/to/image1.jpg", "/path/to/image2.jpg")
+if __name__ == '__main__':
+    p1 = os.path.join(IMAGE_DIR, 'ISIC_0000000.jpg')  
+    p2 = os.path.join(IMAGE_DIR, 'ISIC_0000001.jpg')
+    if os.path.exists(p1) and os.path.exists(p2):
+        predict_pair(p1, p2)
+    else:
+        print("Example files not found in IMAGE_DIR. Replace p1/p2 with actual filenames from your dataset.")
