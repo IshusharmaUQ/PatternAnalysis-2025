@@ -1,66 +1,105 @@
+# Model components and loss functions
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision import models
 
-class SiameseNetwork(nn.Module):
-    def __init__(self):
-        super(SiameseNetwork, self).__init__()
-        
-        # Convolutional feature extractor
-        self.conv_block1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=10)
-        self.conv_block2 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=7)
-        self.conv_block3 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=4)
-        self.conv_block4 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4)
-        
-        # Fully connected layers for embedding generation
-        self.fc_embedding = nn.Linear(256 * 6 * 6, 4096)
-        self.fc_output = nn.Linear(4096, 1)
+# Small convolutional branch (used as fallback)
+class SimpleConvBranch(nn.Module):
+    def __init__(self, out_dim=256):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, 3, padding=1), nn.ReLU(), nn.AdaptiveAvgPool2d(1)
+        )
+        self.fc = nn.Linear(128, out_dim)
 
-    def forward_once(self, image):
-        """
-        Forward pass for a single image through the Siamese branch.
-        Produces an embedding vector representing the image features.
-        """
-        x = F.relu(F.max_pool2d(self.conv_block1(image), kernel_size=2))
-        x = F.relu(F.max_pool2d(self.conv_block2(x), kernel_size=2))
-        x = F.relu(F.max_pool2d(self.conv_block3(x), kernel_size=2))
-        x = F.relu(F.max_pool2d(self.conv_block4(x), kernel_size=2))
-        
-        # Flatten the convolutional features into a vector
+    def forward(self, x):
+        x = self.features(x)
         x = x.view(x.size(0), -1)
-        
-        # Pass through fully connected layers
-        x = F.relu(self.fc_embedding(x))
-        x = self.fc_output(x)
-        
+        x = self.fc(x)
         return x
 
-    def forward(self, img_left, img_right):
-        """
-        Forward pass for a pair of images.
-        Each image is processed independently through the same network.
-        Returns embeddings for both.
-        """
-        embedding_left = self.forward_once(img_left)
-        embedding_right = self.forward_once(img_right)
-        return embedding_left, embedding_right
+# Siamese network using ResNet18 backbone 
+class ImprovedSiameseNetwork(nn.Module):
+    def __init__(self, embedding_dim=256, backbone='resnet18', pretrained=True):
+        super().__init__()
+        if backbone == 'resnet18':
+            b = models.resnet18(pretrained=pretrained)
+            modules = list(b.children())[:-1]  # drop final fc
+            self.backbone = nn.Sequential(*modules)
+            feat_dim = 512
+        else:
+            # fallback small conv
+            self.backbone = SimpleConvBranch(out_dim=embedding_dim)
+            feat_dim = embedding_dim
 
+        if backbone == 'resnet18':
+            self.fc = nn.Sequential(nn.Linear(feat_dim, 512), nn.ReLU(), nn.Linear(512, embedding_dim))
+        else:
+            self.fc = nn.Identity()
 
-def contrastive_loss(embedding_left, embedding_right, label, margin=1.0):
-    """
-    Computes the Contrastive Loss between two embeddings.
+    def forward_once(self, x):
+        out = self.backbone(x)
+        out = out.view(out.size(0), -1)
+        out = self.fc(out)
+        out = F.normalize(out, p=2, dim=1)
+        return out
 
-    Args:
-        embedding_left, embedding_right: Output vectors from the Siamese branches.
-        label: 0 if images are from the same class, 1 if they are from different classes.
-        margin: Minimum distance enforced between embeddings of dissimilar pairs.
-    """
-    # Compute Euclidean distance between the embeddings
-    distance = F.pairwise_distance(embedding_left, embedding_right)
-    
-    # Compute contrastive loss as per Hadsell et al. (2006)
-    loss = torch.mean(
-        (1 - label) * torch.pow(distance, 2) +
-        (label) * torch.pow(torch.clamp(margin - distance, min=0.0), 2)
-    )
-    return loss
+    def forward(self, x1, x2):
+        e1 = self.forward_once(x1)
+        e2 = self.forward_once(x2)
+        return e1, e2
+
+# Triplet variant that returns anchor, positive and negative embeddings
+class TripletSiamese(nn.Module):
+    def __init__(self, embedding_dim=256, backbone='resnet18', pretrained=True):
+        super().__init__()
+        self.siamese = ImprovedSiameseNetwork(embedding_dim, backbone, pretrained)
+
+    def forward(self, anchor, positive, negative):
+        a = self.siamese.forward_once(anchor)
+        p = self.siamese.forward_once(positive)
+        n = self.siamese.forward_once(negative)
+        return a, p, n
+
+# Contrastive loss 
+class ContrastiveLoss(nn.Module):
+    def __init__(self, margin=1.0):
+        super().__init__()
+        self.margin = margin
+
+    def forward(self, out1, out2, label):
+        # label: 1 -> similar, 0 -> dissimilar 
+        dist = F.pairwise_distance(out1, out2)
+        loss = torch.mean((1 - label) * torch.pow(dist, 2) + label * torch.pow(torch.clamp(self.margin - dist, min=0.0), 2))
+        return loss
+
+# Triplet loss wrapper
+class TripletLoss(nn.Module):
+    def __init__(self, margin=0.3):
+        super().__init__()
+        self.margin = margin
+        self.loss = nn.TripletMarginLoss(margin=self.margin, p=2)
+
+    def forward(self, a, p, n):
+        return self.loss(a, p, n)
+
+# Combined loss
+class CombinedLoss(nn.Module):
+    def __init__(self, alpha=1.0, beta=1.0, margin=0.3):
+        super().__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.trip = TripletLoss(margin=margin)
+        self.contrast = ContrastiveLoss(margin=1.0)
+
+    def forward(self, a=None, p=None, n=None, out1=None, out2=None, labels=None):
+        loss = 0.0
+        if (a is not None) and (p is not None) and (n is not None):
+            loss = loss + self.alpha * self.trip(a, p, n)
+        if (out1 is not None) and (out2 is not None) and (labels is not None):
+            loss = loss + self.beta * self.contrast(out1, out2, labels)
+        return loss
