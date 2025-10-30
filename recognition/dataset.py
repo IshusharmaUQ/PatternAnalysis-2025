@@ -1,91 +1,114 @@
+# Data loader and preprocessing 
+
 import os
-import torch
+import random
 import pandas as pd
-from torch.utils.data import Dataset, DataLoader
 from PIL import Image
+import numpy as np
+import torch
+from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
 
+IMAGE_DIR = "/kaggle/input/isic-2020-jpg-224x224-resized/train"
+TRAIN_CSV = "/kaggle/input/isic-2020/labels.csv"   # adjust if your notebook used a different CSV path
+IMG_SIZE = 224
+BATCH_SIZE = 32
+TRAIN_SPLIT = 584  
+
+# train/val transforms
+train_transform = transforms.Compose([
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomVerticalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
+])
+
+val_transform = transforms.Compose([
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
+])
+
 class ISICDataset(Dataset):
-    """
-    Custom dataset for loading ISIC skin lesion images and their labels.
-    """
-    def __init__(self, image_file_paths, class_labels, transform=None):
+    def __init__(self, df, image_dir=IMAGE_DIR, transform=None):
         """
-        Args:
-            image_file_paths (list): List of full paths to image files.
-            class_labels (list): Corresponding list of integer labels (0 or 1).
-            transform (callable, optional): Optional image transformations.
+        df: pandas DataFrame with at least columns ['isic_id' or 'image_name', 'target']
         """
-        self.image_file_paths = image_file_paths
-        self.class_labels = class_labels
+        self.df = df.reset_index(drop=True)
+        self.image_dir = image_dir
         self.transform = transform
 
     def __len__(self):
-        """Return the total number of images in the dataset."""
-        return len(self.image_file_paths)
+        return len(self.df)
 
-    def __getitem__(self, index):
-        """
-        Retrieve an image and its corresponding label at the given index.
-        Applies transformation if specified.
-        """
-        image_path = self.image_file_paths[index]
-        image = Image.open(image_path)
-        label = self.class_labels[index]
-
-        # Apply transformations (resize, normalize, etc.) if provided
+    def __getitem__(self, idx):
+        row = self.df.iloc[idx]
+        img_id = row.get('isic_id') or row.get('image_name') or row.get('image')
+        label = int(row.get('target', 0))
+        img_path = os.path.join(self.image_dir, f"{img_id}.jpg")
+        img = Image.open(img_path).convert('RGB')
         if self.transform:
-            image = self.transform(image)
+            img = self.transform(img)
+        return img, label
 
-        return image, label
-
-
-def load_isic_data(image_directory, csv_train_path, batch_size=32, image_size=224):
+class TripletMelanomaDataset(Dataset):
     """
-    Loads and balances the ISIC dataset, returning a PyTorch DataLoader.
-
-    Args:
-        image_directory (str): Path to directory containing all ISIC images.
-        csv_train_path (str): Path to the CSV file containing image IDs and labels.
-        batch_size (int, optional): Number of samples per batch. Default is 32.
-        image_size (int, optional): Resize dimension for input images. Default is 224.
-
-    Returns:
-        DataLoader: A PyTorch DataLoader containing balanced image-label pairs.
+    Creates triplets (anchor, positive, negative) - consistent with the notebook's triplet sampling idea.
     """
-    # Load the CSV file containing image IDs and their corresponding target labels
-    dataframe = pd.read_csv(csv_train_path)
+    def __init__(self, df, image_dir=IMAGE_DIR, transform=None):
+        self.df = df.reset_index(drop=True)
+        self.image_dir = image_dir
+        self.transform = transform
+        self.pos_idx = self.df[self.df['target'] == 1].index.tolist()
+        self.neg_idx = self.df[self.df['target'] == 0].index.tolist()
 
-    # Split IDs into benign and malignant groups
-    benign_image_ids = dataframe[dataframe['target'] == 0]['isic_id'].values
-    malignant_image_ids = dataframe[dataframe['target'] == 1]['isic_id'].values
+    def __len__(self):
+        return len(self.df)
 
-    # Ensure dataset is balanced by taking equal samples from each class
-    balanced_sample_size = min(len(benign_image_ids), len(malignant_image_ids))
+    def __getitem__(self, idx):
+        anchor_row = self.df.iloc[idx]
+        anchor_label = int(anchor_row['target'])
 
-    # Construct full image paths for both benign and malignant samples
-    benign_image_paths = [os.path.join(image_directory, f"{img_id}.jpg") 
-                          for img_id in benign_image_ids[:balanced_sample_size]]
-    malignant_image_paths = [os.path.join(image_directory, f"{img_id}.jpg") 
-                             for img_id in malignant_image_ids[:balanced_sample_size]]
+        if anchor_label == 1:
+            pos_idx = np.random.choice(self.pos_idx)
+            neg_idx = np.random.choice(self.neg_idx)
+        else:
+            pos_idx = np.random.choice(self.neg_idx)
+            neg_idx = np.random.choice(self.pos_idx)
 
-    # Define image preprocessing transformations
-    image_transforms = transforms.Compose([
-        transforms.Resize((image_size, image_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],  # Standard ImageNet normalization
-                             std=[0.229, 0.224, 0.225])
-    ])
+        pos_row = self.df.iloc[pos_idx]
+        neg_row = self.df.iloc[neg_idx]
 
-    # Combine benign and malignant samples into one dataset
-    train_dataset = ISICDataset(
-        image_file_paths=benign_image_paths + malignant_image_paths,
-        class_labels=[0] * len(benign_image_paths) + [1] * len(malignant_image_paths),
-        transform=image_transforms
-    )
+        def load_row(r):
+            img_id = r.get('isic_id') or r.get('image_name') or r.get('image')
+            path = os.path.join(self.image_dir, f"{img_id}.jpg")
+            img = Image.open(path).convert('RGB')
+            if self.transform:
+                img = self.transform(img)
+            return img
 
-    # Create a DataLoader to efficiently load images in batches
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        anchor_img = load_row(anchor_row)
+        pos_img = load_row(pos_row)
+        neg_img = load_row(neg_row)
 
-    return train_loader
+        return anchor_img, pos_img, neg_img, anchor_label
+
+def build_loaders(df, image_dir=IMAGE_DIR, batch_size=BATCH_SIZE, img_size=IMG_SIZE):
+    """
+    Build train and val DataLoaders trying to mirror the notebook splitting logic.
+    Returns train_loader, val_loader (triplet loaders).
+    """
+    df_shuffled = df.sample(frac=1, random_state=42).reset_index(drop=True)
+    split = int(len(df_shuffled) * 0.8)
+    train_df = df_shuffled.iloc[:split].reset_index(drop=True)
+    val_df = df_shuffled.iloc[split:].reset_index(drop=True)
+
+    train_ds = TripletMelanomaDataset(train_df, image_dir=image_dir, transform=train_transform)
+    val_ds = TripletMelanomaDataset(val_df, image_dir=image_dir, transform=val_transform)
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+
+    return train_loader, val_loader
