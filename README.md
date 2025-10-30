@@ -63,8 +63,8 @@ Batch Size: 32\
 Training was monitored via loss and validation accuracy curves
 
 #### 6.1 Expected Accuracy
+<img width="670" height="224" alt="image" src="https://github.com/user-attachments/assets/c916e0a0-9e2e-4345-a6bf-9468cfef2489" />\
 The final model achieved approximately 0.80 validation accuracy on the test split — meeting the required benchmark for a hard-difficulty task.
-<img width="670" height="224" alt="image" src="https://github.com/user-attachments/assets/c916e0a0-9e2e-4345-a6bf-9468cfef2489" />
 
 ### 7. Dependencies
 ```
@@ -97,12 +97,14 @@ This will:
 2. Train the Siamese model for 25 epochs
 3. Save the best model as siamese_model.pth
 4. Generate a loss graph
+   
    <img width="1038" height="780" alt="image" src="https://github.com/user-attachments/assets/91dff306-b3e2-4125-b8fb-d827bd3c314f" />
 
-Above is the training, validation, and AUC-ROC plots over 25 epochs of training and validation. All training plots show relatively stable trends over epochs.\
-The loss value decreases gradually, while both accuracy and AUC-ROC increases over time. Validation loss and accuracy showed similar trends, however is significantly\ 
-more unstable, with noticeable spikes/dips at epoch 2 and 11. Validation AUC-ROC is much more stable, increasing over time with small fluctuations towards the end of\ training. Some signs of plateuing is also present in the validation AUC-ROC plot, suggesting that additional training will likely be detremental to the model and\
-leading to overfitting.
+Above is the training, validation, and AUC-ROC plots over 25 epochs of training and validation. All training plots show relatively stable trends over epochs. The loss value decreases gradually, while both accuracy and AUC-ROC increase over time.
+
+Validation loss and accuracy show similar trends; however, they are significantly more unstable, with noticeable spikes/dips at epochs 2 and 11. Validation AUC-ROC is much more stable, increasing over time with small fluctuations towards the end of training.
+
+Some signs of plateauing are also present in the validation AUC-ROC plot, suggesting that additional training will likely be detrimental to the model and may lead to overfitting.
 
 #### 9.2 Prediction
 ``` python predict.py ```
