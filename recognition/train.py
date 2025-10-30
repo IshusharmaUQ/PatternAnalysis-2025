@@ -1,71 +1,90 @@
+# Training, validation, testing and saving.
+# Imports model from modules.py and data loader from dataset.py
+
+import os
 import torch
 import torch.optim as optim
+import numpy as np
 import matplotlib.pyplot as plt
-from modules import SiameseNetwork, contrastive_loss
-from dataset import load_data  # Make sure function name matches your dataset file
+import pandas as pd
 
-# ------------------------------------------------------------
-# Device setup (GPU if available, else CPU)
-# ------------------------------------------------------------
+from modules import TripletSiamese, CombinedLoss
+from dataset import build_loaders, TRAIN_CSV, IMAGE_DIR
+
+# device setting 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ------------------------------------------------------------
-# Initialize model, optimizer, and training parameters
-# ------------------------------------------------------------
-siamese_model = SiameseNetwork().to(device)
-train_data_loader = load_data(image_dir="/path/to/images", train_csv="/path/to/train.csv")
+# hyperparameters 
+IMG_SIZE = 224
+BATCH_SIZE = 32
+NUM_EPOCHS = 10
+LEARNING_RATE = 1e-4
+MODEL_SAVE_PATH = "siamese_model.pth"
 
-optimizer = optim.Adam(siamese_model.parameters(), lr=0.0005)
-num_training_epochs = 10
-epoch_loss_history = []
+# load dataframe 
+df = pd.read_csv(TRAIN_CSV)
 
-# ------------------------------------------------------------
-# Training loop
-# ------------------------------------------------------------
-for epoch_index in range(num_training_epochs):
-    siamese_model.train()
-    cumulative_epoch_loss = 0.0
+# build loaders 
+train_loader, val_loader = build_loaders(df, image_dir=IMAGE_DIR, batch_size=BATCH_SIZE, img_size=IMG_SIZE)
 
-    # Iterate over each batch of (image1, image2, label)
-    for batch_data in train_data_loader:
-        image_left, image_right, pair_label = batch_data
-        image_left, image_right, pair_label = (
-            image_left.to(device),
-            image_right.to(device),
-            pair_label.to(device),
-        )
+# instantiate model from modules.py 
+model = TripletSiamese(embedding_dim=256, backbone='resnet18', pretrained=True).to(device)
 
-        # Reset gradients
+# loss and optimizer 
+criterion = CombinedLoss(alpha=1.0, beta=1.0, margin=0.3)
+optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+
+train_losses = []
+val_losses = []
+best_val_loss = np.inf
+
+for epoch in range(NUM_EPOCHS):
+    model.train()
+    running_loss = 0.0
+    for i, (anchor, pos, neg, label) in enumerate(train_loader):
+        anchor = anchor.to(device)
+        pos = pos.to(device)
+        neg = neg.to(device)
+
         optimizer.zero_grad()
-
-        # Forward pass: compute embeddings for both images
-        embedding_left, embedding_right = siamese_model(image_left, image_right)
-
-        # Compute contrastive loss based on similarity/dissimilarity
-        batch_loss = contrastive_loss(embedding_left, embedding_right, pair_label)
-
-        # Backpropagation and parameter update
-        batch_loss.backward()
+        a, p, n = model(anchor, pos, neg)
+        loss = criterion(a=a, p=p, n=n)  
         optimizer.step()
 
-        # Track total loss for this epoch
-        cumulative_epoch_loss += batch_loss.item()
+        running_loss += loss.item()
 
-    # Compute average loss for the epoch
-    average_epoch_loss = cumulative_epoch_loss / len(train_data_loader)
-    epoch_loss_history.append(average_epoch_loss)
+    avg_train_loss = running_loss / len(train_loader)
+    train_losses.append(avg_train_loss)
 
-    # Log epoch progress
-    print(f"Epoch [{epoch_index + 1}/{num_training_epochs}] - Loss: {average_epoch_loss:.4f}")
+    # validation
+    model.eval()
+    running_val = 0.0
+    with torch.no_grad():
+        for anchor, pos, neg, label in val_loader:
+            anchor = anchor.to(device); pos = pos.to(device); neg = neg.to(device)
+            a, p, n = model(anchor, pos, neg)
+            loss = criterion(a=a, p=p, n=n)
+            running_val += loss.item()
+    avg_val_loss = running_val / len(val_loader)
+    val_losses.append(avg_val_loss)
 
-    # Save model checkpoint after each epoch
-    torch.save(siamese_model.state_dict(), "siamese_model.pth")
+    print(f"Epoch [{epoch+1}/{NUM_EPOCHS}] Train Loss: {avg_train_loss:.4f} Val Loss: {avg_val_loss:.4f}")
 
-# ------------------------------------------------------------
-# Plot training loss curve
-# ------------------------------------------------------------
-plt.plot(epoch_loss_history)
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.title("Siamese Network Training Loss")
-plt.show()
+    # scheduler step and save best model
+    scheduler.step()
+    if avg_val_loss < best_val_loss:
+        best_val_loss = avg_val_loss
+        torch.save(model.state_dict(), MODEL_SAVE_PATH)
+        print(f"Saved best model to {MODEL_SAVE_PATH} (val loss {best_val_loss:.4f})")
+
+# Plot losses 
+plt.figure()
+plt.plot(train_losses)
+plt.plot(val_losses)
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend(['train','val'])
+plt.title('Training and Validation Loss')
+plt.savefig('loss_curve.png')
+print('Saved loss curve to loss_curve.png')
