@@ -34,9 +34,9 @@ graph TD
     L --> O[Optimizer]
 ```
 ### 4. Dataset and Preprocessing
-#### 4.1 Dataset: ISIC 2020 Challenge (Kaggle Resized) 
+### 4.1 Dataset: ISIC 2020 Challenge (Kaggle Resized) 
 Images were resized to 224×224 pixels and normalized using ImageNet mean and standard deviation.
-#### 4.2 Preprocessing Steps:
+### 4.2 Preprocessing Steps:
 1. Resizing all images to (224, 224)
 
 2. Random horizontal & vertical flips, rotation, and color jitter for augmentation
@@ -45,7 +45,7 @@ Images were resized to 224×224 pixels and normalized using ImageNet mean and st
 
 4. Random perspective & affine transformations to improve generalization
 
-#### 4.3 References:
+### 4.3 References:
 1. Krizhevsky et al., *ImageNet Classification with Deep Convolutional Neural Networks (2012)* 
 2. Hadsell et al., *Dimensionality Reduction by Learning an Invariant Mapping (2006)* (original Siamese approach)
 
@@ -62,7 +62,7 @@ Epochs: 25\
 Batch Size: 32\
 Training was monitored via loss and validation accuracy curves
 
-#### 6.1 Expected Accuracy
+### 6.1 Expected Accuracy
 <img width="670" height="224" alt="image" src="https://github.com/user-attachments/assets/c916e0a0-9e2e-4345-a6bf-9468cfef2489" />\
 The final model achieved approximately 0.80 validation accuracy on the test split — meeting the required benchmark for a hard-difficulty task.
 
@@ -89,7 +89,7 @@ The final model achieved approximately 0.80 validation accuracy on the test spli
 └── README.md        # Project documentation
 ```
 ### 9. Usage Instructions
-#### 9.1 Training
+### 9.1 Training
    ``` python train.py```
    
 This will:
@@ -106,7 +106,7 @@ Validation loss and accuracy show similar trends; however, they are significantl
 
 Some signs of plateauing are also present in the validation AUC-ROC plot, suggesting that additional training will likely be detrimental to the model and may lead to overfitting.
 
-#### 9.2 Prediction
+### 9.2 Prediction
 ``` python predict.py ```
    
 Example Output:\
