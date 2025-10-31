@@ -209,6 +209,18 @@ Typical training progression shows:
 * Training Accuracy: Improves from ~62% to ~86%
 * Test Accuracy: Reaches ~80% (target achieved)
 
+Prediction on model
+``` # Run the full predictionscript
+python predict.py
+```
+Output:
+
+<img width="499" height="56" alt="image" src="https://github.com/user-attachments/assets/78e46e55-2b19-4c8b-9328-513097e1e15a" />
+
+The above image displays the output from the prediction script, where a single image is evaluated, and the model outputs the predicted probabilities for both classes and the final prediction.
+
+
+
 ### 8. Model Architecture Details
 Network Components
 ```
