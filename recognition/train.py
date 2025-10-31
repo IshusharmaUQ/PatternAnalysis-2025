@@ -229,7 +229,7 @@ for epoch in range(num_epochs):
             'optimizer_state_dict': optimizer.state_dict(),
             'test_acc': test_acc,
         }, 'best_triplet_model.pth')
-        print(f"  ✓ New best model saved! (Acc: {best_acc:.4f})")
+        print(f"  Best model Updated (Acc: {best_acc:.4f})")
     else:
         patience_counter += 1
     
