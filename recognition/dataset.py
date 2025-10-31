@@ -7,14 +7,26 @@ import numpy as np
 
 class TripletMelanomaDataset(Dataset):
     """Creates triplet samples: anchor, positive (same class), negative (different class)"""
+    
     def __init__(self, benign_paths, malignant_paths, transform=None, num_triplets=10000, seed=None):
+        """
+        Initialize the triplet dataset
+        
+        Args:
+            benign_paths: List of file paths to benign images
+            malignant_paths: List of file paths to malignant images
+            transform: Optional transforms to apply to images
+            num_triplets: Number of triplets to generate
+            seed: Random seed for reproducibility
+        """
         self.transform = transform
         self.benign_paths = benign_paths
         self.malignant_paths = malignant_paths
         self.num_triplets = num_triplets
+        # Initialize random number generator with seed
         self.rng = np.random.default_rng(seed)
         
-        # Pre-generate triplets
+        # Pre-generate triplets for consistent dataset
         self.triplets = []
         self._generate_triplets()
     
@@ -33,21 +45,36 @@ class TripletMelanomaDataset(Dataset):
                 negative = self.rng.choice(self.benign_paths)
                 label = 1  # malignant
             
+            # Store the triplet with its label
             self.triplets.append((anchor, positive, negative, label))
     
     def __len__(self):
+        """Return the total number of triplets"""
         return self.num_triplets
     
     def __getitem__(self, idx):
+        """
+        Get a single triplet sample
+        
+        Args:
+            idx: Index of the triplet to retrieve
+            
+        Returns:
+            Tuple of (anchor, positive, negative, label)
+        """
+        # Unpack the triplet paths and label
         anchor_path, positive_path, negative_path, label = self.triplets[idx]
         
+        # Load images and convert to RGB
         anchor = Image.open(anchor_path).convert("RGB")
         positive = Image.open(positive_path).convert("RGB")
         negative = Image.open(negative_path).convert("RGB")
         
+        # Apply transforms if provided
         if self.transform:
             anchor = self.transform(anchor)
             positive = self.transform(positive)
             negative = self.transform(negative)
         
+        # Return triplet with label as tensor
         return anchor, positive, negative, torch.tensor(label, dtype=torch.long)
